@@ -44,6 +44,7 @@ PKG_CHECK_MODULES(DRM, libdrm)
 PKG_CHECK_MODULES(GBM, gbm)
 PKG_CHECK_MODULES(EGL, egl)
 PKG_CHECK_MODULES(GLES2, glesv2)
+PKG_CHECK_MODULES(GL, gl)
 
 dnl ===========================================================================
 dnl check compiler flags

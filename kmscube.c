@@ -32,6 +32,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#include <linux/kd.h>
+
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <gbm.h>
@@ -73,7 +75,13 @@ struct drm_fb {
 static int init_drm(void)
 {
 	static const char *modules[] = {
-			"i915", "radeon", "nouveau", "vmwgfx", "omapdrm", "exynos", "msm"
+		"i915",
+		"radeon",
+		"nouveau",
+		"vmwgfx",
+		"omapdrm",
+		"exynos",
+		"msm"
 	};
 	drmModeRes *resources;
 	drmModeConnector *connector = NULL;
@@ -81,24 +89,24 @@ static int init_drm(void)
 	int i, area;
 
 	for (i = 0; i < ARRAY_SIZE(modules); i++) {
-		printf("trying to load module %s...", modules[i]);
+		fprintf(stderr,"trying to load module %s...", modules[i]);
 		drm.fd = drmOpen(modules[i], NULL);
 		if (drm.fd < 0) {
-			printf("failed.\n");
+			fprintf(stderr,"failed.\n");
 		} else {
-			printf("success.\n");
+			fprintf(stderr,"success.\n");
 			break;
 		}
 	}
 
 	if (drm.fd < 0) {
-		printf("could not open drm device\n");
+		fprintf(stderr,"could not open drm device\n");
 		return -1;
 	}
 
 	resources = drmModeGetResources(drm.fd);
 	if (!resources) {
-		printf("drmModeGetResources failed: %s\n", strerror(errno));
+		fprintf(stderr,"drmModeGetResources failed: %s\n", strerror(errno));
 		return -1;
 	}
 
@@ -117,7 +125,7 @@ static int init_drm(void)
 		/* we could be fancy and listen for hotplug events and wait for
 		 * a connector..
 		 */
-		printf("no connected connector!\n");
+		fprintf(stderr,"no connected connector!\n");
 		return -1;
 	}
 
@@ -132,7 +140,7 @@ static int init_drm(void)
 	}
 
 	if (!drm.mode) {
-		printf("could not find mode!\n");
+		fprintf(stderr,"could not find mode!\n");
 		return -1;
 	}
 
@@ -146,7 +154,7 @@ static int init_drm(void)
 	}
 
 	if (!encoder) {
-		printf("no encoder!\n");
+		fprintf(stderr,"no encoder!\n");
 		return -1;
 	}
 
@@ -162,10 +170,11 @@ static int init_gbm(void)
 
 	gbm.surface = gbm_surface_create(gbm.dev,
 			drm.mode->hdisplay, drm.mode->vdisplay,
-			GBM_FORMAT_XRGB8888,
+			// GBM_FORMAT_XRGB8888,
+			GBM_FORMAT_ARGB2101010,
 			GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
 	if (!gbm.surface) {
-		printf("failed to create gbm surface\n");
+		fprintf(stderr,"failed to create gbm surface\n");
 		return -1;
 	}
 
@@ -287,8 +296,8 @@ static int init_gl(void)
 		EGL_RED_SIZE, 1,
 		EGL_GREEN_SIZE, 1,
 		EGL_BLUE_SIZE, 1,
-		EGL_ALPHA_SIZE, 0,
-		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+		EGL_ALPHA_SIZE, 1,
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
 		EGL_NONE
 	};
 
@@ -329,37 +338,37 @@ static int init_gl(void)
 	gl.display = eglGetDisplay(gbm.dev);
 
 	if (!eglInitialize(gl.display, &major, &minor)) {
-		printf("failed to initialize\n");
+		fprintf(stderr,"failed to initialize\n");
 		return -1;
 	}
 
-	printf("Using display %p with EGL version %d.%d\n",
+	fprintf(stderr,"Using display %p with EGL version %d.%d\n",
 			gl.display, major, minor);
 
-	printf("EGL Version \"%s\"\n", eglQueryString(gl.display, EGL_VERSION));
-	printf("EGL Vendor \"%s\"\n", eglQueryString(gl.display, EGL_VENDOR));
-	printf("EGL Extensions \"%s\"\n", eglQueryString(gl.display, EGL_EXTENSIONS));
+	fprintf(stderr,"EGL Version \"%s\"\n", eglQueryString(gl.display, EGL_VERSION));
+	fprintf(stderr,"EGL Vendor \"%s\"\n", eglQueryString(gl.display, EGL_VENDOR));
+	fprintf(stderr,"EGL Extensions \"%s\"\n", eglQueryString(gl.display, EGL_EXTENSIONS));
 
 	if (!eglBindAPI(EGL_OPENGL_ES_API)) {
-		printf("failed to bind api EGL_OPENGL_ES_API\n");
+		fprintf(stderr,"failed to bind api EGL_OPENGL_ES_API\n");
 		return -1;
 	}
 
 	if (!eglChooseConfig(gl.display, config_attribs, &gl.config, 1, &n) || n != 1) {
-		printf("failed to choose config: %d\n", n);
+		fprintf(stderr,"failed to choose config: %d\n", n);
 		return -1;
 	}
 
 	gl.context = eglCreateContext(gl.display, gl.config,
 			EGL_NO_CONTEXT, context_attribs);
 	if (gl.context == NULL) {
-		printf("failed to create context\n");
+		fprintf(stderr,"failed to create context\n");
 		return -1;
 	}
 
 	gl.surface = eglCreateWindowSurface(gl.display, gl.config, gbm.surface, NULL);
 	if (gl.surface == EGL_NO_SURFACE) {
-		printf("failed to create egl surface\n");
+		fprintf(stderr,"failed to create egl surface\n");
 		return -1;
 	}
 
@@ -376,12 +385,12 @@ static int init_gl(void)
 	if (!ret) {
 		char *log;
 
-		printf("vertex shader compilation failed!:\n");
+		fprintf(stderr,"vertex shader compilation failed!:\n");
 		glGetShaderiv(vertex_shader, GL_INFO_LOG_LENGTH, &ret);
 		if (ret > 1) {
 			log = malloc(ret);
 			glGetShaderInfoLog(vertex_shader, ret, NULL, log);
-			printf("%s", log);
+			fprintf(stderr,"%s", log);
 		}
 
 		return -1;
@@ -396,13 +405,13 @@ static int init_gl(void)
 	if (!ret) {
 		char *log;
 
-		printf("fragment shader compilation failed!:\n");
+		fprintf(stderr,"fragment shader compilation failed!:\n");
 		glGetShaderiv(fragment_shader, GL_INFO_LOG_LENGTH, &ret);
 
 		if (ret > 1) {
 			log = malloc(ret);
 			glGetShaderInfoLog(fragment_shader, ret, NULL, log);
-			printf("%s", log);
+			fprintf(stderr,"%s", log);
 		}
 
 		return -1;
@@ -423,13 +432,13 @@ static int init_gl(void)
 	if (!ret) {
 		char *log;
 
-		printf("program linking failed!:\n");
+		fprintf(stderr,"program linking failed!:\n");
 		glGetProgramiv(gl.program, GL_INFO_LOG_LENGTH, &ret);
 
 		if (ret > 1) {
 			log = malloc(ret);
 			glGetProgramInfoLog(gl.program, ret, NULL, log);
-			printf("%s", log);
+			fprintf(stderr,"%s", log);
 		}
 
 		return -1;
@@ -453,11 +462,16 @@ static int init_gl(void)
 	glBufferSubData(GL_ARRAY_BUFFER, gl.positionsoffset, sizeof(vVertices), &vVertices[0]);
 	glBufferSubData(GL_ARRAY_BUFFER, gl.colorsoffset, sizeof(vColors), &vColors[0]);
 	glBufferSubData(GL_ARRAY_BUFFER, gl.normalsoffset, sizeof(vNormals), &vNormals[0]);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid*)gl.positionsoffset);
+
+	
+	void (*glVertexAttribOffset)(GLuint,GLint,GLenum,GLboolean,GLsizei,uintptr_t) =
+		(void*)glVertexAttribPointer;
+
+	glVertexAttribOffset(0, 3, GL_FLOAT, GL_FALSE, 0, gl.positionsoffset);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid*)gl.normalsoffset);
+	glVertexAttribOffset(1, 3, GL_FLOAT, GL_FALSE, 0, gl.normalsoffset);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid*)gl.colorsoffset);
+	glVertexAttribOffset(2, 3, GL_FLOAT, GL_FALSE, 0, gl.colorsoffset);
 	glEnableVertexAttribArray(2);
 
 	return 0;
@@ -541,7 +555,7 @@ static struct drm_fb * drm_fb_get_from_bo(struct gbm_bo *bo)
 
 	ret = drmModeAddFB(drm.fd, width, height, 24, 32, stride, handle, &fb->fb_id);
 	if (ret) {
-		printf("failed to create fb: %s\n", strerror(errno));
+		fprintf(stderr,"failed to create fb: %s\n", strerror(errno));
 		free(fb);
 		return NULL;
 	}
@@ -570,25 +584,37 @@ int main(int argc, char *argv[])
 	uint32_t i = 0;
 	int ret;
 
+	if( getenv("DISPLAY") ) {
+		fprintf(stderr,
+			"X11 display variable set. Likely %s was started from within a X11 session. "
+			"This is not good, because we're treading on the toes of the X11 server here, "
+			"which may lead to it crashing.\n",
+			argv[0] );
+		return 1;
+	}
+
+	int const fd_tty = open("/dev/tty", O_RDWR);
+	if( -1 == fd_tty ) {
+		fprintf(stderr, "failed to open TTY\n");
+		return 1;
+	}
+	ioctl(fd_tty, KDSETMODE, KD_GRAPHICS);
+
 	ret = init_drm();
 	if (ret) {
-		printf("failed to initialize DRM\n");
+		fprintf(stderr,"failed to initialize DRM\n");
 		return ret;
 	}
 
-	FD_ZERO(&fds);
-	FD_SET(0, &fds);
-	FD_SET(drm.fd, &fds);
-
 	ret = init_gbm();
 	if (ret) {
-		printf("failed to initialize GBM\n");
+		fprintf(stderr,"failed to initialize GBM\n");
 		return ret;
 	}
 
 	ret = init_gl();
 	if (ret) {
-		printf("failed to initialize EGL\n");
+		fprintf(stderr,"failed to initialize EGL\n");
 		return ret;
 	}
 
@@ -603,11 +629,12 @@ int main(int argc, char *argv[])
 	ret = drmModeSetCrtc(drm.fd, drm.crtc_id, fb->fb_id, 0, 0,
 			&drm.connector_id, 1, drm.mode);
 	if (ret) {
-		printf("failed to set mode: %s\n", strerror(errno));
+		fprintf(stderr,"failed to set mode: %s\n", strerror(errno));
 		return ret;
 	}
 
-	while (1) {
+	int quit = 0;
+	while (!quit) {
 		struct gbm_bo *next_bo;
 		int waiting_for_flip = 1;
 
@@ -625,20 +652,25 @@ int main(int argc, char *argv[])
 		ret = drmModePageFlip(drm.fd, drm.crtc_id, fb->fb_id,
 				DRM_MODE_PAGE_FLIP_EVENT, &waiting_for_flip);
 		if (ret) {
-			printf("failed to queue page flip: %s\n", strerror(errno));
+			fprintf(stderr,"failed to queue page flip: %s\n", strerror(errno));
 			return -1;
 		}
 
 		while (waiting_for_flip) {
+			FD_ZERO(&fds);
+			FD_SET(0, &fds);
+			FD_SET(drm.fd, &fds);
+
 			ret = select(drm.fd + 1, &fds, NULL, NULL, NULL);
 			if (ret < 0) {
-				printf("select err: %s\n", strerror(errno));
+				fprintf(stderr,"select err: %s\n", strerror(errno));
 				return ret;
 			} else if (ret == 0) {
-				printf("select timeout!\n");
+				fprintf(stderr,"select timeout!\n");
 				return -1;
 			} else if (FD_ISSET(0, &fds)) {
-				printf("user interrupted!\n");
+				fprintf(stderr,"user interrupted!\n");
+				quit = 1;
 				break;
 			}
 			drmHandleEvent(drm.fd, &evctx);
@@ -648,6 +680,10 @@ int main(int argc, char *argv[])
 		gbm_surface_release_buffer(gbm.surface, bo);
 		bo = next_bo;
 	}
+quit_main_loop:
+
+	ioctl(fd_tty, KDSETMODE, KD_TEXT);
+	close(fd_tty);
 
 	return ret;
 }
